@@ -1,0 +1,13 @@
+<nav class="header">
+  <h1>Nikolina</h1>
+  <ul>
+    <li><a routerLink="">Home</a></li>
+    <li>About</li>
+
+    @if (!(auth.isLoggedIn$ | async)) {
+    <li><a routerLink="/login">Login</a></li>
+    }@else {
+    <li><button type="button" (click)="logout()">Logout</button></li>
+    }
+  </ul>
+</nav>
