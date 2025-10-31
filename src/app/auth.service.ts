@@ -1,19 +1,26 @@
 import { Injectable, inject } from '@angular/core';
-import { Auth, authState } from '@angular/fire/auth';
-import { signOut } from 'firebase/auth';
+import { getAuth, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { map, shareReplay } from 'rxjs/operators';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private auth = inject(Auth);
+  private auth = getAuth();
 
+  currentUser: User | null = null;
   /** Firebase user stream (null ako nije logiran) */
-  user$ = authState(this.auth).pipe(shareReplay({ bufferSize: 1, refCount: true }));
+  constructor() {
+    // sluša promjene korisnika
+    onAuthStateChanged(this.auth, (user) => {
+      this.currentUser = user;
+    });
+  }
 
-  /** Je li logiran */
-  isLoggedIn$ = this.user$.pipe(map((u) => !!u));
+  /** provjera je li korisnik prijavljen */
+  get isLoggedIn(): boolean {
+    return !!this.currentUser;
+  }
 
-  /** Odjava */
+  /** odjava */
   logout() {
     return signOut(this.auth);
   }

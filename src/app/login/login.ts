@@ -4,8 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { Router, ActivatedRoute } from '@angular/router';
 
-import { Auth } from '@angular/fire/auth';
 import {
+  getAuth,
   signInWithEmailAndPassword,
   setPersistence,
   browserLocalPersistence,
@@ -27,8 +27,9 @@ export class Login {
   loading = false;
 
   private returnUrl = '/dashboard';
+  private auth = getAuth();
 
-  constructor(private auth: Auth, private router: Router, private route: ActivatedRoute) {
+  constructor(private router: Router, private route: ActivatedRoute) {
     const q = this.route.snapshot.queryParams['returnUrl'];
     if (q) {
       this.returnUrl = q;

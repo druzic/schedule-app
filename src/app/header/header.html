@@ -2,9 +2,9 @@
   <h1>Nikolina</h1>
   <ul>
     <li><a routerLink="">Home</a></li>
-    <li>About</li>
+    <li><a routerLink="/dashboard">Dashboard</a></li>
 
-    @if (!(auth.isLoggedIn$ | async)) {
+    @if (!auth.isLoggedIn) {
     <li><a routerLink="/login">Login</a></li>
     }@else {
     <li><button type="button" (click)="logout()">Logout</button></li>
