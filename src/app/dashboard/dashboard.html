@@ -165,10 +165,22 @@
         @for (s of slots; track s.label) {
         <button
           type="button"
-          class="px-3 py-2 rounded border hover:bg-gray-50 text-left"
-          (click)="time = s.label"
+          class="px-3 py-2 rounded border hover:bg-gray-50 text-left transition-colors duration-100"
+          (click)="handleSlotClick(s)"
+          [ngClass]="{
+            'bg-red-100 text-red-700 border-red-300': s.isBooked,
+            'bg-green-100 border-green-300': !s.isBooked && time === s.label
+          }"
         >
-          {{ s.label }}
+          <div class="font-bold">{{ s.label }}</div>
+
+          @if (s.isBooked) {
+          <div class="text-sm">
+            {{ s.appointment?.clientName }} ({{ s.appointment?.serviceName }})
+          </div>
+          } @else {
+          <div class="text-sm text-gray-500">Dostupno</div>
+          }
         </button>
         }
       </div>

@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { FormsModule, ReactiveFormsModule, FormControl } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { CommonModule, registerLocaleData } from '@angular/common';
@@ -10,9 +10,19 @@ import localeHr from '@angular/common/locales/hr';
 import { MatAutocompleteModule } from '@angular/material/autocomplete';
 import { Observable } from 'rxjs';
 import { startWith, map } from 'rxjs/operators';
+import { MatDialog } from '@angular/material/dialog';
+import { DialogBox } from '../dialog-box/dialog-box';
 
 // ✅ čisti Firebase SDK (bez AngularFire Firestore)
-import { getFirestore, collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import {
+  getFirestore,
+  collection,
+  getDocs,
+  addDoc,
+  serverTimestamp,
+  query,
+  where,
+} from 'firebase/firestore';
 
 registerLocaleData(localeHr, 'hr-HR');
 
@@ -24,6 +34,16 @@ type Client = {
   createdAt?: any;
 };
 type Service = { id: number; serviceName: string; price: number };
+
+export type Appointment = {
+  id?: string;
+  clientId: string;
+  clientName: string; // Denormalizirano ime
+  serviceId: number;
+  serviceName: string | null;
+  date: Date; // Ovo se u bazi sprema kao Timestamp
+  time: string;
+};
 
 @Component({
   selector: 'app-dashboard',
@@ -60,6 +80,28 @@ export class Dashboard {
 
   saving = false;
 
+  readonly dialog = inject(MatDialog);
+
+  openDialog(appointment: Appointment) {
+    console.log('Opening dialog' + appointment);
+    const dialogRef = this.dialog.open(DialogBox, {
+      data: appointment,
+    });
+  }
+
+  handleSlotClick(slot: {
+    label: string;
+    date: Date;
+    isBooked: boolean;
+    appointment?: Appointment;
+  }) {
+    if (slot.isBooked && slot.appointment) {
+      this.openDialog(slot.appointment);
+    } else {
+      this.time = slot.label;
+    }
+  }
+
   services: Service[] = [
     { id: 1, serviceName: 'Šminkanje', price: 45 },
     { id: 2, serviceName: 'Pedikura', price: 35 },
@@ -70,11 +112,13 @@ export class Dashboard {
 
   nameControl = new FormControl<string>('');
   clients: Client[] = [];
+  appointments: Appointment[] = [];
   filteredClients$!: Observable<Client[]>;
   selectedClient: Client | null = null;
 
   async ngOnInit() {
     await this.loadAllClients();
+    await this.loadAppointments(this.selected);
     this.filteredClients$ = this.nameControl.valueChanges.pipe(
       startWith(this.nameControl.value ?? ''),
       map((v) => this.filterClients(v))
@@ -98,6 +142,7 @@ export class Dashboard {
 
   onDateChanged(d: Date) {
     this.selected = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    this.loadAppointments(this.selected);
   }
 
   private todayLocal() {
@@ -109,10 +154,12 @@ export class Dashboard {
     const d = new Date(this.selected);
     d.setDate(d.getDate() + n);
     this.onDateChanged(d);
+    this.time = '';
   }
 
   goToday() {
     this.onDateChanged(this.todayLocal());
+    this.time = '';
   }
 
   onNameInputChange(event: Event) {
@@ -125,11 +172,22 @@ export class Dashboard {
     console.log('Input name changed to:', inputValue);
   }
 
-  get slots(): { label: string; date: Date }[] {
-    const out: { label: string; date: Date }[] = [];
+  get slots(): { label: string; date: Date; isBooked: boolean; appointment?: Appointment }[] {
+    const out: { label: string; date: Date; isBooked: boolean; appointment?: Appointment }[] = [];
+
+    // Stvorite mapu zauzetih vremena radi brze provjere
+    const bookedTimes = new Map<string, Appointment>();
+    this.appointments.forEach((app) => {
+      bookedTimes.set(app.time, app); // Vrijeme (string) kao ključ
+    });
+
     let h = this.workStart,
       m = 0;
+
     while (true) {
+      const label = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      const appointment = bookedTimes.get(label);
+
       const date = new Date(
         this.selected.getFullYear(),
         this.selected.getMonth(),
@@ -139,7 +197,15 @@ export class Dashboard {
         0,
         0
       );
-      out.push({ label: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`, date });
+
+      out.push({
+        label,
+        date,
+        isBooked: !!appointment, // true ako postoji termin
+        appointment, // Dodajte cijeli objekt termina ako postoji
+      });
+
+      // Logika za sljedeći slot (ostaje ista)
       const next = new Date(date.getTime() + this.stepMin * 60000);
       if (
         next.getHours() > this.workEnd ||
@@ -197,7 +263,7 @@ export class Dashboard {
         this.clients.push({ id: clientId, ...newClient });
       }
 
-      const docRef = await addDoc(collection(this.db, 'appointments'), {
+      const data = {
         clientId: clientId,
         clientName: trimmedName,
         serviceId: this.selectedServiceId,
@@ -206,11 +272,55 @@ export class Dashboard {
         date: this.selected,
         time: this.time,
         createdAt: serverTimestamp(),
-      });
+      };
+
+      const docRef = await addDoc(collection(this.db, 'appointments'), data);
+
       console.log('Appointment saved with ID:', docRef.id);
+
+      const newAppointment: Appointment = {
+        id: docRef.id, // Koristimo novi ID iz Firebasea
+        ...data,
+      };
+
+      this.appointments.push(newAppointment);
+      this.time = '';
       this.saving = false;
     } catch (error) {
       console.error('Greška kod spremanja termina:', error);
+    }
+  }
+
+  private async loadAppointments(date: Date) {
+    this.appointments = [];
+
+    try {
+      const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59);
+      const appointmentsRef = collection(this.db, 'appointments');
+
+      // Kreiramo upit za sve termine gdje je 'date' između početka i kraja dana
+      const q = query(
+        appointmentsRef,
+        where('date', '>=', startOfDay),
+        where('date', '<=', endOfDay)
+      );
+
+      const querySnapshot = await getDocs(q);
+
+      this.appointments = querySnapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          // ✅ Konvertirajte Firebase Timestamp natrag u JS Date objekt
+          date: (data['date'] as any).toDate(),
+        } as Appointment;
+      });
+
+      console.log(`Loaded ${this.appointments.length} appointments for the day.`);
+    } catch (error) {
+      console.error('Error loading appointments:', error);
     }
   }
 

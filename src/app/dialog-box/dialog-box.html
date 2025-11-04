@@ -1,0 +1,25 @@
+<h2 mat-dialog-title class="font-bold text-xl border-b pb-4">
+  Uredi termin za: <span class="text-indigo-600">{{ data.clientName }} </span>
+</h2>
+<mat-dialog-content>
+  <div class="grid">
+    <mat-form-field>
+      <mat-label>Datum</mat-label>
+      <input matInput [matDatepicker]="picker" [(ngModel)]="editedAppointment.date" />
+      <mat-datepicker-toggle matIconSuffix [for]="picker"></mat-datepicker-toggle>
+      <mat-datepicker #picker></mat-datepicker>
+    </mat-form-field>
+    <mat-form-field>
+      <mat-label>Vrijeme</mat-label>
+      <mat-select [(ngModel)]="editedAppointment.time" name="time" #timeSelect="ngModel">
+        @for (t of timeSlots; track t) {
+        <mat-option [value]="t">{{ t }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+  </div>
+</mat-dialog-content>
+<mat-dialog-actions>
+  <button matButton mat-dialog-close>Odustani</button>
+  <button matButton (click)="onSave()">Potvrdi</button>
+</mat-dialog-actions>
